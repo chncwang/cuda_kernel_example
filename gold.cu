@@ -109,23 +109,7 @@ int main(){
     cudaMemcpy(d_vector, h_vector, DSIZE*sizeof(float), cudaMemcpyHostToDevice);
     int max_index = 0;
     unsigned long long dtime = dtime_usec(0);
-    //d_vector is a pointer on the device pointing to the beginning of the vector, containing nrElements floats.
-    thrust::device_ptr<float> d_ptr = thrust::device_pointer_cast(d_vector);
-    thrust::device_vector<float>::iterator d_it = thrust::max_element(d_ptr, d_ptr + nrElements);
-    max_index = d_it - (thrust::device_vector<float>::iterator)d_ptr;
-    cudaDeviceSynchronize();
-    dtime = dtime_usec(dtime);
-    std::cout << "thrust time: " << dtime/(float)USECPSEC << " max index: " << max_index << std::endl;
-    max_index = 0;
-    dtime = dtime_usec(0);
-    my_status = cublasIsamax(my_handle, DSIZE, d_vector, 1, &max_index);
-    cudaDeviceSynchronize();
-    dtime = dtime_usec(dtime);
-    std::cout << "cublas time: " << dtime/(float)USECPSEC << " max index: " << max_index << std::endl;
-    max_index = 0;
     int *d_max_index;
-    cudaMalloc(&d_max_index, sizeof(int));
-    dtime = dtime_usec(0);
     max_idx_kernel<<<MIN(MAX_KERNEL_BLOCKS, ((DSIZE+nTPB-1)/nTPB)), nTPB>>>(d_vector, DSIZE, d_max_index);
     cudaMemcpy(&max_index, d_max_index, sizeof(int), cudaMemcpyDeviceToHost);
     dtime = dtime_usec(dtime);
