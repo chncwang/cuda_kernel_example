@@ -27,30 +27,25 @@ unsigned long long dtime_usec(unsigned long long prev){
 __device__ volatile float blk_vals[MAX_BLOCKS];
 __device__ volatile int   blk_idxs[MAX_BLOCKS];
 __device__ int   blk_num = 0;
+__device__ volatile float   vals[nTPB];
+__device__ volatile int idxs[nTPB];
 
-template <typename T>
-__global__ void max_idx_kernel(const T *data, const int dsize, int *result){
 
-    __shared__ volatile T   vals[nTPB];
-    __shared__ volatile int idxs[nTPB];
-    __shared__ volatile int last_block;
-    int idx = threadIdx.x+blockDim.x*blockIdx.x; // idx is the current data's index
-    last_block = 0;
-    T   my_val = FLOAT_MIN;
+__global__ void max_idx_kernel(const float *data, const int dsize, int *result) {
+    int idx = threadIdx.x;
+    float my_val = FLOAT_MIN;
     int my_idx = -1;
-    // sweep from global memory
-    while (idx < dsize){ // idx is in the array
+    while (idx < dsize) {
         if (data[idx] > my_val) {
             my_val = data[idx];
-            my_idx = idx; // find the max data
+            my_idx = idx;
         }
-        idx += blockDim.x*gridDim.x; // if the array is very long
+        idx += blockDim.x;
     }
-    // populate shared memory
     vals[threadIdx.x] = my_val;
-    idxs[threadIdx.x] = my_idx; // load to the shared memory
+    idxs[threadIdx.x] = my_idx;
+
     __syncthreads();
-    // sweep in shared memory
     for (int i = (nTPB>>1); i > 0; i>>=1) { // i = 512, 265, ...
         if (threadIdx.x < i) { // threadIdx.x is between 0 to 1023
             if (vals[threadIdx.x] < vals[threadIdx.x + i]) {
@@ -60,40 +55,8 @@ __global__ void max_idx_kernel(const T *data, const int dsize, int *result){
         }
         __syncthreads();
     }
-    // perform block-level reduction
-    if (!threadIdx.x) { // threadIdx.x is 0 , and there stores the max value
-        blk_vals[blockIdx.x] = vals[0];
-        blk_idxs[blockIdx.x] = idxs[0]; // store per block's max value into 
-        if (atomicAdd(&blk_num, 1) == gridDim.x - 1) // then I am the last block
-            last_block = 1;
-    }
-    __syncthreads();
-    if (last_block){
-        idx = threadIdx.x;
-        my_val = FLOAT_MIN;
-        my_idx = -1;
-        while (idx < gridDim.x){
-            if (blk_vals[idx] > my_val) {
-                my_val = blk_vals[idx];
-                my_idx = blk_idxs[idx];
-            }
-            idx += blockDim.x;
-        }
-        // populate shared memory
-        vals[threadIdx.x] = my_val;
-        idxs[threadIdx.x] = my_idx;
-        __syncthreads();
-        // sweep in shared memory
-        for (int i = (nTPB>>1); i > 0; i>>=1){
-            if (threadIdx.x < i) {
-                if (vals[threadIdx.x] < vals[threadIdx.x + i]) {
-                    vals[threadIdx.x] = vals[threadIdx.x+i];
-                    idxs[threadIdx.x] = idxs[threadIdx.x+i];
-                }
-            }
-            __syncthreads();}
-        if (!threadIdx.x)
-            *result = idxs[0];
+    if (threadIdx.x == 0) {
+        *result = idxs[0];
     }
 }
 
@@ -112,7 +75,7 @@ int main(){
     int *d_max_index;
     cudaMalloc(&d_max_index, sizeof(int));
     unsigned long long dtime = dtime_usec(0);
-    max_idx_kernel<<<MIN(MAX_KERNEL_BLOCKS, ((DSIZE+nTPB-1)/nTPB)), nTPB>>>(d_vector, DSIZE, d_max_index);
+    max_idx_kernel<<<1, nTPB>>>(d_vector, DSIZE, d_max_index);
     cudaDeviceSynchronize();
     dtime = dtime_usec(dtime);
     std::cout << "kernel time: " << dtime/(float)USECPSEC;
