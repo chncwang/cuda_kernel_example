@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include <cublas_v2.h>
 #include <thrust/extrema.h>
 #include <thrust/device_ptr.h>
@@ -111,10 +112,9 @@ int main(){
     unsigned long long dtime = dtime_usec(0);
     int *d_max_index;
     max_idx_kernel<<<MIN(MAX_KERNEL_BLOCKS, ((DSIZE+nTPB-1)/nTPB)), nTPB>>>(d_vector, DSIZE, d_max_index);
-    cudaMemcpy(&max_index, d_max_index, sizeof(int), cudaMemcpyDeviceToHost);
     dtime = dtime_usec(dtime);
+    cudaMemcpy(&max_index, d_max_index, sizeof(int), cudaMemcpyDeviceToHost);
     std::cout << "kernel time: " << dtime/(float)USECPSEC << " max index: " << max_index << std::endl;
-
 
     return 0;
 }
